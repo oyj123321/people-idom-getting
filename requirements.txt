@@ -1,0 +1,5 @@
+# 基本依赖
+setuptools>=41.0.0
+
+# 未来可能需要的依赖
+# pysqlcipher3>=1.0.3  # 用于处理加密的SQLite数据库 
