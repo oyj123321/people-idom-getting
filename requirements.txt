@@ -1,5 +1,8 @@
 # 基本依赖
 setuptools>=41.0.0
+requests>=2.25.1
+tqdm>=4.61.2
+pycryptodome>=3.10.1
 
 # 未来可能需要的依赖
 # pysqlcipher3>=1.0.3  # 用于处理加密的SQLite数据库 
