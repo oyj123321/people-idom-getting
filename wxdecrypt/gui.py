@@ -14,6 +14,7 @@ from typing import List, Dict, Any, Optional
 # 导入其他模块
 from wxdecrypt.wechat_path import get_wechat_db_path, get_qq_db_path
 from wxdecrypt.db_decrypt import WeChatDBDecrypt
+from wxdecrypt.utils.memory_utils import get_wechat_key  # 确保导入get_wechat_key函数
 
 # 导入数据分析模块（如果安装了相关依赖）
 try:
@@ -416,7 +417,8 @@ class WxDecryptApp:
             
             # 获取密钥（如果需要）
             if not is_qq:
-                self.key = decryptor.key = decryptor.get_wechat_key()
+                key = get_wechat_key()  # 直接调用导入的函数
+                self.key = decryptor.key = key
                 if not decryptor.key:
                     print("未能获取微信数据库密钥")
                     self.root.after(0, lambda: self.status_var.set("解密失败"))
@@ -463,7 +465,8 @@ class WxDecryptApp:
             # 获取微信密钥
             wechat_dbs = [db for db in self.found_databases if db.get('type', '') == "微信"]
             if wechat_dbs:
-                wechat_decryptor.key = wechat_decryptor.get_wechat_key()
+                key = get_wechat_key()  # 直接调用导入的函数
+                wechat_decryptor.key = key
                 if not wechat_decryptor.key:
                     print("未能获取微信数据库密钥，将跳过微信数据库解密")
             
