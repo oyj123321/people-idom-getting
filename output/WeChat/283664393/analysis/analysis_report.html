@@ -1,0 +1,74 @@
+
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>聊天记录分析报告</title>
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    margin: 0;
+                    padding: 20px;
+                    background-color: #f5f5f5;
+                }
+                .container {
+                    max-width: 1200px;
+                    margin: 0 auto;
+                    background-color: white;
+                    padding: 20px;
+                    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+                }
+                h1, h2, h3 {
+                    color: #333;
+                }
+                .visualization {
+                    margin: 20px 0;
+                    text-align: center;
+                }
+                .visualization img {
+                    max-width: 100%;
+                    border: 1px solid #ddd;
+                }
+                .footer {
+                    margin-top: 30px;
+                    text-align: center;
+                    color: #777;
+                    font-size: 0.9em;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>聊天记录分析报告</h1>
+                <p>数据库路径: D:\群智\output\WeChat\283664393\nt_msg.db</p>
+                <p>生成时间: 2025-03-06 17:01:49</p>
+                
+                <h2>数据可视化</h2>
+                
+                <div class="visualization">
+                    <h3>每日消息数量</h3>
+                    <img src="每日消息数量.png" alt="每日消息数量" />
+                </div>
+                
+                <div class="visualization">
+                    <h3>各时段消息数量</h3>
+                    <img src="各时段消息数量.png" alt="各时段消息数量" />
+                </div>
+                
+                <div class="visualization">
+                    <h3>词频统计</h3>
+                    <img src="词频统计.png" alt="词频统计" />
+                </div>
+                
+                <div class="visualization">
+                    <h3>词云图</h3>
+                    <img src="词云图.png" alt="词云图" />
+                </div>
+                
+                <div class="footer">
+                    <p>由微信/QQ数据库解密与分析工具生成</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        
