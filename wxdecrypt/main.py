@@ -4,7 +4,7 @@
 import os
 import sys
 import argparse
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Tuple, Union
 
 from wxdecrypt.wechat_path import get_wechat_db_path, get_qq_db_path
 from wxdecrypt.db_decrypt import WeChatDBDecrypt
@@ -23,6 +23,13 @@ try:
     HAS_GUI = True
 except ImportError:
     HAS_GUI = False
+
+# 导入真实解密模块
+try:
+    from wxdecrypt.real_decrypt import RealWeChatDBDecrypt
+    HAS_REAL_DECRYPT = True
+except ImportError:
+    HAS_REAL_DECRYPT = False
 
 def parse_args():
     """解析命令行参数"""
@@ -60,6 +67,10 @@ def parse_args():
     # GUI选项
     parser.add_argument('--cli', action='store_true',
                        help='使用命令行界面而不是图形界面')
+    
+    # 真实解密选项
+    parser.add_argument('-b', '--basic', action='store_true',
+                       help='使用基本解密模式')
     
     return parser.parse_args()
 
@@ -115,73 +126,65 @@ def list_databases(list_qq=False, drives=None, full_scan=False):
             print(f"   路径: {db['path']}")
             print()
 
-def decrypt_databases(output_dir: str, quiet: bool = False, test_mode: bool = False, decrypt_qq: bool = False, drives=None, full_scan=False, analyze=False):
-    """解密所有找到的数据库"""
-    # 处理驱动器参数
-    search_drives = parse_drives(drives) if drives else None
+def decrypt_all_databases(output_dir: str = "./output", analyze: bool = False, 
+                        decrypt_qq: bool = False, search_drives: List[str] = None,
+                        test_mode: bool = False, use_real_decrypt: bool = True) -> List[Dict[str, Any]]:
+    """
+    解密所有找到的微信/QQ数据库
     
-    if not quiet:
-        if not decrypt_qq:
-            print("开始自动查找并解密微信数据库...")
-        else:
-            print("开始自动查找并解密QQ数据库...")
-    
-    decryptor = WeChatDBDecrypt()
-    if test_mode:
-        decryptor.test_mode = True
-    
-    if decrypt_qq:
-        decryptor.decrypt_qq = True
-    
-    # 设置搜索驱动器
-    decryptor.search_drives = search_drives
-    decryptor.full_scan = full_scan
+    Args:
+        output_dir: 输出目录
+        analyze: 是否进行数据分析
+        decrypt_qq: 是否解密QQ数据库
+        search_drives: 要搜索的驱动器列表
+        test_mode: 是否为测试模式
+        use_real_decrypt: 是否使用真实解密
         
+    Returns:
+        解密结果列表
+    """
+    print("\n" + "="*60)
+    if decrypt_qq:
+        print("开始解密QQ数据库...")
+    else:
+        print("开始解密微信数据库...")
+    
+    # 选择解密器
+    if use_real_decrypt and HAS_REAL_DECRYPT:
+        print("使用真实解密模块（基于PyWxDump）...")
+        decryptor = RealWeChatDBDecrypt()
+    else:
+        if use_real_decrypt:
+            print("真实解密模块不可用，将使用基本解密模块...")
+        else:
+            print("使用基本解密模块...")
+        decryptor = WeChatDBDecrypt()
+    
+    # 设置参数
+    decryptor.test_mode = test_mode
+    decryptor.decrypt_qq = decrypt_qq
+    decryptor.search_drives = search_drives
+    
+    # 开始解密
     results = decryptor.auto_find_and_decrypt(output_dir)
     
-    if not results:
-        print("未能解密任何数据库")
-        if not test_mode:
-            print("\n可能的原因：")
-            print("1. 未找到数据库")
-            print("2. 应用未登录或密钥获取失败")
-            print("3. 系统权限不足")
-            print("\n建议操作：")
-            print("1. 确保应用已登录")
-            print("2. 尝试指定搜索驱动器: wxdecrypt -d D:,E:")
-            print("3. 尝试全盘搜索: wxdecrypt -f")
-            print("4. 以管理员权限运行本程序")
-            print("5. 尝试使用测试模式: wxdecrypt -t")
-        return
-    
+    # 输出解密结果
     success_count = sum(1 for r in results if r['success'])
-    if not quiet:
-        print(f"\n成功解密 {success_count} 个数据库:")
-        for result in results:
-            if result['success']:
-                if 'username' in result['original']:
-                    # 微信数据库
-                    print(f"用户: {result['original']['username']}")
-                    print(f"微信ID: {result['original'].get('wxid', 'unknown')}")
-                else:
-                    # QQ数据库
-                    print(f"QQ号: {result['original'].get('qqid', 'unknown')}")
-                print(f"数据库: {result['original']['db_name']}")
-                print(f"解密路径: {result['decrypted_path']}")
-                print("-" * 50)
-        
-        if success_count > 0:
-            print("\n您现在可以:")
-            print("1. 使用SQLite浏览器查看解密后的数据库")
-            print("2. 使用数据库导出功能将聊天记录导出为其他格式（功能开发中）")
-            if HAS_ANALYSIS:
-                print("3. 使用 -a 参数对解密后的数据库进行分析")
-    else:
-        print(f"成功解密 {success_count} 个数据库")
+    print(f"\n解密完成！成功: {success_count}/{len(results)}")
     
-    # 如果需要分析并且存在成功解密的数据库，进行数据分析
+    # 成功的数据库解密路径
+    if success_count > 0:
+        print("\n成功解密的数据库:")
+        for i, result in enumerate(results, 1):
+            if result['success']:
+                print(f"{i}. {result['decrypted_path']}")
+    
+    # 分析数据库
     if analyze and HAS_ANALYSIS and success_count > 0:
         analyze_decrypted_results(results, decrypt_qq)
+    elif analyze and not HAS_ANALYSIS:
+        print("\n警告: 数据分析功能不可用，无法进行分析")
+        print("请安装必要的依赖: pandas, matplotlib, jieba, wordcloud")
     
     return results
 
@@ -328,16 +331,12 @@ def run_cli():
     if args.test:
         output_dir = test_program()
         if args.qq:
-            decrypt_databases(output_dir, args.quiet, True, True, None, False, 
-                             HAS_ANALYSIS and getattr(args, 'analyze', False))
+            decrypt_all_databases(output_dir, args.analyze, True, None, True, not args.basic)
         elif args.both:
-            decrypt_databases(output_dir, args.quiet, True, False, None, False, 
-                             HAS_ANALYSIS and getattr(args, 'analyze', False))
-            decrypt_databases(output_dir, args.quiet, True, True, None, False, 
-                             HAS_ANALYSIS and getattr(args, 'analyze', False))
+            decrypt_all_databases(output_dir, args.analyze, False, None, True, not args.basic)
+            decrypt_all_databases(output_dir, args.analyze, True, None, True, not args.basic)
         else:
-            decrypt_databases(output_dir, args.quiet, True, False, None, False, 
-                             HAS_ANALYSIS and getattr(args, 'analyze', False))
+            decrypt_all_databases(output_dir, args.analyze, False, None, True, not args.basic)
         return
     
     if args.list:
@@ -351,15 +350,15 @@ def run_cli():
         return
     
     # 分析功能标志
-    analyze = HAS_ANALYSIS and getattr(args, 'analyze', False)
+    analyze = HAS_ANALYSIS and args.analyze
     
     if args.qq:
-        decrypt_databases(args.output, args.quiet, False, True, args.drives, args.full_scan, analyze)
+        decrypt_all_databases(args.output, analyze, True, args.drives, args.test, not args.basic)
     elif args.both:
-        decrypt_databases(args.output, args.quiet, False, False, args.drives, args.full_scan, analyze)
-        decrypt_databases(args.output, args.quiet, False, True, args.drives, args.full_scan, analyze)
+        decrypt_all_databases(args.output, analyze, False, args.drives, args.test, not args.basic)
+        decrypt_all_databases(args.output, analyze, True, args.drives, args.test, not args.basic)
     else:
-        decrypt_databases(args.output, args.quiet, False, False, args.drives, args.full_scan, analyze)
+        decrypt_all_databases(args.output, analyze, False, args.drives, args.test, not args.basic)
 
 def main():
     """主函数，默认启动GUI界面，如果指定了命令行参数则使用命令行界面"""

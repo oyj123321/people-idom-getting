@@ -16,6 +16,13 @@ from wxdecrypt.wechat_path import get_wechat_db_path, get_qq_db_path
 from wxdecrypt.db_decrypt import WeChatDBDecrypt
 from wxdecrypt.utils.memory_utils import get_wechat_key  # 确保导入get_wechat_key函数
 
+# 尝试导入真实解密模块
+try:
+    from wxdecrypt.real_decrypt import RealWeChatDBDecrypt
+    HAS_REAL_DECRYPT = True
+except ImportError:
+    HAS_REAL_DECRYPT = False
+
 # 导入数据分析模块（如果安装了相关依赖）
 try:
     from wxdecrypt.data_analysis import generate_analysis_report
@@ -58,11 +65,32 @@ class WxDecryptApp:
     """微信/QQ数据库解密工具GUI应用"""
     
     def __init__(self, root):
-        """初始化GUI应用"""
+        """初始化应用"""
         self.root = root
-        self.root.title("微信/QQ数据库识别与解密工具")
+        self.root.title("微信/QQ数据库解密工具")
         self.root.geometry("800x600")
-        self.root.minsize(700, 500)
+        self.root.minsize(800, 600)
+        
+        # 创建变量
+        self.found_databases = []
+        self.output_var = tk.StringVar(value="./output")
+        self.search_var = tk.StringVar()
+        self.drives_var = tk.StringVar()
+        self.type_var = tk.StringVar(value="微信")
+        self.full_scan_var = tk.BooleanVar(value=False)
+        self.selected_dbs = []
+        self.key = None
+        self.status_var = tk.StringVar(value="就绪")
+        self.analyzing = False
+        self.last_report_path = None
+        
+        # 用于数据分析的变量
+        self.db_path_var = tk.StringVar()
+        self.db_type_var = tk.StringVar(value="微信")
+        self.analysis_output_var = tk.StringVar(value="./output/analysis")
+        
+        # 真实解密选项
+        self.use_real_decrypt_var = tk.BooleanVar(value=True if HAS_REAL_DECRYPT else False)
         
         # 设置样式
         self.style = ttk.Style()
@@ -80,14 +108,8 @@ class WxDecryptApp:
             self.create_analysis_tab()
         
         # 状态栏
-        self.status_var = tk.StringVar()
-        self.status_var.set("就绪")
         self.status_bar = ttk.Label(root, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
-        
-        # 数据变量
-        self.found_databases = []
-        self.decrypted_results = []
         
         # 绑定窗口关闭事件
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -196,6 +218,17 @@ class WxDecryptApp:
         if not HAS_ANALYSIS:
             analyze_check.configure(state="disabled")
             ttk.Label(options_frame, text="(需安装分析依赖)").pack(side=tk.LEFT)
+        
+        # 真实解密选项
+        decrypt_mode_frame = ttk.Frame(control_frame)
+        decrypt_mode_frame.pack(fill=tk.X, padx=10, pady=5, anchor=tk.W)
+        
+        if HAS_REAL_DECRYPT:
+            ttk.Checkbutton(decrypt_mode_frame, text="使用真实解密（基于PyWxDump，推荐）", 
+                          variable=self.use_real_decrypt_var).pack(side=tk.LEFT)
+        else:
+            ttk.Label(decrypt_mode_frame, text="真实解密模块未安装，将使用基本解密").pack(side=tk.LEFT)
+            ttk.Label(decrypt_mode_frame, text="可通过pip install PyWxDump安装").pack(side=tk.LEFT, padx=(10, 0))
         
         # 按钮区域
         button_frame = ttk.Frame(control_frame)
@@ -388,8 +421,18 @@ class WxDecryptApp:
             db_type = db.get('type', '')
             is_qq = (db_type == "QQ")
             
-            # 创建解密器
-            decryptor = WeChatDBDecrypt()
+            # 使用真实解密模式
+            use_real_decrypt = False
+            if hasattr(self, 'use_real_decrypt_var') and hasattr(self.use_real_decrypt_var, 'get'):
+                use_real_decrypt = HAS_REAL_DECRYPT and self.use_real_decrypt_var.get()
+            
+            # 选择解密器
+            if use_real_decrypt:
+                print("使用真实解密模块（基于PyWxDump）...")
+                decryptor = RealWeChatDBDecrypt()
+            else:
+                decryptor = WeChatDBDecrypt()
+            
             decryptor.decrypt_qq = is_qq
             
             # 创建输出目录
@@ -417,7 +460,19 @@ class WxDecryptApp:
             
             # 获取密钥（如果需要）
             if not is_qq:
-                key = get_wechat_key()  # 直接调用导入的函数
+                if use_real_decrypt:
+                    try:
+                        # 使用PyWxDump获取真实密钥
+                        from PyWxDump.wx import get_key as wx_get_key
+                        key = wx_get_key()
+                        if not key:
+                            print("未能通过PyWxDump获取微信密钥，尝试备用方法...")
+                            key = get_wechat_key()
+                    except Exception as e:
+                        print(f"使用PyWxDump获取密钥失败: {e}")
+                        print("使用备用方法...")
+                        key = get_wechat_key()
+                
                 self.key = decryptor.key = key
                 if not decryptor.key:
                     print("未能获取微信数据库密钥")
@@ -430,16 +485,20 @@ class WxDecryptApp:
             
             if success:
                 print(f"解密成功: {output_path}")
+                self.root.after(0, lambda: self.status_var.set("解密成功"))
                 
                 # 如果需要分析
                 if analyze and HAS_ANALYSIS:
-                    analysis_dir = os.path.join(os.path.dirname(output_path), 'analysis')
                     print(f"开始分析数据库: {output_path}")
-                    report_path = generate_analysis_report(output_path, analysis_dir, is_qq)
-                    print(f"分析报告已保存到: {report_path}")
-                    self.last_report_path = report_path
-                
-                self.root.after(0, lambda: self.status_var.set("解密完成"))
+                    analysis_dir = os.path.join(os.path.dirname(output_path), 'analysis')
+                    os.makedirs(analysis_dir, exist_ok=True)
+                    
+                    try:
+                        report_path = generate_analysis_report(output_path, analysis_dir, is_qq)
+                        print(f"分析完成! 报告保存到: {report_path}")
+                        self.last_report_path = report_path
+                    except Exception as e:
+                        print(f"分析数据库时出错: {e}")
             else:
                 print(f"解密失败: {db_path}")
                 self.root.after(0, lambda: self.status_var.set("解密失败"))
@@ -451,21 +510,48 @@ class WxDecryptApp:
         finally:
             # 恢复stdout
             sys.stdout = orig_stdout
+            self.redirector = None
     
     def _decrypt_all_thread(self, output_dir, analyze, orig_stdout):
         """所有数据库解密线程"""
         try:
             self.root.after(0, lambda: self.status_var.set("正在解密所有数据库..."))
             
-            # 创建解密器
-            wechat_decryptor = WeChatDBDecrypt()
-            qq_decryptor = WeChatDBDecrypt()
+            # 检查是否使用真实解密
+            use_real_decrypt = False
+            if hasattr(self, 'use_real_decrypt_var') and hasattr(self.use_real_decrypt_var, 'get'):
+                use_real_decrypt = HAS_REAL_DECRYPT and self.use_real_decrypt_var.get()
+            
+            # 选择解密器
+            if use_real_decrypt:
+                print("使用真实解密模块（基于PyWxDump）...")
+                wechat_decryptor = RealWeChatDBDecrypt()
+                qq_decryptor = RealWeChatDBDecrypt()
+            else:
+                wechat_decryptor = WeChatDBDecrypt()
+                qq_decryptor = WeChatDBDecrypt()
+            
+            # 设置QQ解密器
             qq_decryptor.decrypt_qq = True
             
             # 获取微信密钥
             wechat_dbs = [db for db in self.found_databases if db.get('type', '') == "微信"]
             if wechat_dbs:
-                key = get_wechat_key()  # 直接调用导入的函数
+                if use_real_decrypt:
+                    try:
+                        # 使用PyWxDump获取真实密钥
+                        from PyWxDump.wx import get_key as wx_get_key
+                        key = wx_get_key()
+                        if not key:
+                            print("未能通过PyWxDump获取微信密钥，尝试备用方法...")
+                            key = get_wechat_key()
+                    except Exception as e:
+                        print(f"使用PyWxDump获取密钥失败: {e}")
+                        print("尝试使用备用方法...")
+                        key = get_wechat_key()
+                else:
+                    key = get_wechat_key()  # 直接调用导入的函数
+                
                 wechat_decryptor.key = key
                 if not wechat_decryptor.key:
                     print("未能获取微信数据库密钥，将跳过微信数据库解密")
@@ -517,10 +603,12 @@ class WxDecryptApp:
                         is_main = db.get('is_main_db', False)
                         if is_main or 'msg' in db_name.lower():
                             analysis_dir = os.path.join(os.path.dirname(output_path), 'analysis')
+                            os.makedirs(analysis_dir, exist_ok=True)
                             print(f"开始分析数据库: {output_path}")
+                            
                             try:
                                 report_path = generate_analysis_report(output_path, analysis_dir, is_qq)
-                                print(f"分析报告已保存到: {report_path}")
+                                print(f"分析完成! 报告保存到: {report_path}")
                                 self.last_report_path = report_path
                             except Exception as e:
                                 print(f"分析数据库时出错: {e}")
@@ -529,6 +617,10 @@ class WxDecryptApp:
             
             # 更新状态
             self.root.after(0, lambda: self.status_var.set(f"解密完成，成功 {success_count}/{len(self.found_databases)} 个数据库"))
+            
+            if success_count > 0:
+                print("\n成功解密的数据库可在以下目录找到:")
+                print(f"{os.path.abspath(output_dir)}")
         
         except Exception as e:
             print(f"解密过程出错: {e}")
@@ -537,6 +629,7 @@ class WxDecryptApp:
         finally:
             # 恢复stdout
             sys.stdout = orig_stdout
+            self.redirector = None
     
     def clear_decrypt_log(self):
         """清除解密日志"""
